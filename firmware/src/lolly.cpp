@@ -346,7 +346,6 @@ public:
   virtual CRGB render(int idx, float r, float deg) { return CRGB::Black; }
 };
 
-// Simple test for the polar coordiante rendering
 class PolarTest : public EffectPolar
 {
   float r = 0;
@@ -365,20 +364,61 @@ class PolarTest : public EffectPolar
   }
 };
 
-// This reproduces the very first test with changing the number of arms every 2 seconds
-// the first test was here: https://editor.p5js.org/dynamix/sketches/gNS2GeqVQ
 class VariableArmsDemo : public Effect
 {
   void draw(void) override
   {
     static uint8_t hueOffset = 0;
     static uint8_t numArms = 1;
-    EVERY_N_SECONDS(2) { numArms++; }
+    EVERY_N_SECONDS(1) { numArms++; }
     for (int i = 0; i < NUM_LEDS; i++)
     {
       uint16_t armIndex = i % numArms;
       uint8_t hue = (map(armIndex, 0, numArms, 0, 255) + hueOffset) % 255;
       leds[ledsAsSpiralMap[i]] = CHSV(hue, 255, 255);
+    }
+  }
+};
+
+// uses the planar map instead of x and y coordinates of every pixel
+class PlanarDemo : public Effect
+{
+  void draw(void) override
+  {
+    for (int i = 0; i < PLANAR_COLS; i++)
+    {
+      for (int j = 0; j < PLANAR_ROWS; j++)
+      {
+        int idx = planarMap[i * PLANAR_COLS + j];
+        if (idx == 1000)
+          continue;
+        leds[idx] = CHSV(i * 20, 255, 255);
+      }
+    }
+  }
+};
+
+// uses the polarMap instead of distance and angle of every pixel
+class PolarDemo : public Effect
+{
+  void draw(void) override
+  {
+    uint16_t a = millis() / 7;
+    static int n = 0;
+    // EVERY_N_MILLIS(259) { n++; n = n%POLAR_COLS;}
+
+    for (int j = 0; j < POLAR_ROWS; j++)
+    {
+      for (int i = 0; i < POLAR_COLS; i++)
+      {
+        uint16_t idx = polarMap[POLAR_COLS * j + i];
+
+        if (idx == 1000)
+          continue;
+        leds[idx].setHue(i * 54 + (a >> 2) + (sin8(j * 16 + a)) >> 1);
+
+        // leds[idx] = CHSV(i*4,200,200);
+      }
     }
   }
 };
@@ -407,16 +447,6 @@ class VariableArmsDemo : public Effect
 //       }
 //     }
 //   }
-
-static uint8_t hue = 0;
-hue++;
-for (int i = 0; i < NUM_LEDS; i++)
-{
-  leds[i] = CHSV(hue + i * 2, 255, 255);
-}
-}
-}
-;
 
 class FTest : public Effect
 {
