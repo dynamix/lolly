@@ -1,3 +1,5 @@
+firmware/main.elf
+firmware/main.hex
 lolly-backups
 fp-info-cache
 test.dxf

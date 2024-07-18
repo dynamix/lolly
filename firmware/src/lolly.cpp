@@ -43,8 +43,7 @@ Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x29, &Wire2);
 // Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
 
 // button board
-Adafruit_NeoTrellis pad(NEO_TRELLIS_ADDR, &Wire1);
-#define PAD_CONNECTED false
+// for SCA/SCl might have to use &Wire1
 
 // active or not active for the pad buttons
 uint8_t buttonState[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -67,8 +66,6 @@ AudioConnection patchCord1(adc1, peak1);
 #include "segment.h"
 #include "maps.h"
 
-typedef void (*Mode[2])(void);
-
 // global state
 int8_t currentMode = 0;
 int8_t previousMode = 0;
@@ -79,8 +76,6 @@ uint8_t currentBrightness = 25;
 uint16_t currentDelay = 0; // delay between frames
 uint8_t shouldClear = 1;   // clear all leds between frames
 uint8_t shouldShow = 1;
-uint8_t potentiometerControlsBrightness = 1; // use potentiometer to get brightness value for next frame
-uint8_t scheduleStrobo = 0;
 
 // Debug stuff to count LEDS properly
 static int globalP = 0;
@@ -112,116 +107,6 @@ void remap()
   }
 }
 
-TrellisCallback readButton(keyEvent evt)
-{
-  Serial.print("BUTTON: ");
-  Serial.print(evt.bit.NUM);
-
-  if (buttonStateful[evt.bit.NUM])
-  {
-    Serial.print(" OLDSTATE=");
-    Serial.print(buttonState[evt.bit.NUM]);
-    if (buttonState[evt.bit.NUM] && evt.bit.EDGE == SEESAW_KEYPAD_EDGE_FALLING && millis() > buttonDebounce[evt.bit.NUM] + 1000)
-    {
-      buttonState[evt.bit.NUM] = 0;
-      pad.pixels.setPixelColor(evt.bit.NUM, 0);
-      buttonDebounce[evt.bit.NUM] = millis();
-    }
-    else if (!buttonState[evt.bit.NUM] && evt.bit.EDGE == SEESAW_KEYPAD_EDGE_RISING && millis() > buttonDebounce[evt.bit.NUM] + 1000)
-    {
-      buttonState[evt.bit.NUM] = 1;
-      CRGB c = CHSV(map(evt.bit.NUM, 0, pad.pixels.numPixels(), 0, 255), 240, 240);
-      pad.pixels.setPixelColor(evt.bit.NUM, pad.pixels.Color(c.r, c.g, c.b));
-      buttonDebounce[evt.bit.NUM] = millis();
-    }
-    Serial.print(" NEWSTATE=");
-    Serial.print(buttonState[evt.bit.NUM]);
-  }
-  else
-  {
-    if (evt.bit.EDGE == SEESAW_KEYPAD_EDGE_RISING)
-    {
-      CRGB c = CHSV(map(evt.bit.NUM, 0, pad.pixels.numPixels(), 0, 255), 240, 240);
-      pad.pixels.setPixelColor(evt.bit.NUM, pad.pixels.Color(c.r, c.g, c.b));
-
-      switch (evt.bit.NUM)
-      {
-        // new FiberAndFishsEffect(), // 0
-        // new Fibercrazy(), // 1
-        // new Heartbeat(), // 2
-        // new AccelTest(), // 3
-        // new NewAudio(), // 4
-        // new JellyAudio(), // 5
-        // new JellyColorEffect(), // 6
-        // new RunnersEffect(), // 7
-        // new ColorWheelNew(), // 8
-        // new ColorWheelWithSparkels(), // 9
-        // new Streaming(), // 10
-        // new Rings(), // 11
-        // new Juggle(), // 12
-        // // new DropEffect(),
-        // new Bouncy(), // 13
-        // new PrideEffect(), // 14
-        // new IceSparkEffect(), // 15
-        // new SinelonEffect(), // 16
-        // new PixelFiringEffect(), // 17
-        // // new BlurEffect(),
-        // new PaletteTestEffect()}; // 18
-
-      case 0:
-        nextScheduledMode = 0;
-        break;
-      case 1:
-        nextScheduledMode = 2;
-        break;
-      case 2:
-        nextScheduledMode = 4;
-        break;
-      case 4:
-        nextScheduledMode = 8;
-        break;
-      case 5:
-        nextScheduledMode = 10;
-        break;
-      case 6:
-        nextScheduledMode = 12;
-        break;
-      case 8:
-        nextScheduledMode = 13;
-        break;
-      case 9:
-        nextScheduledMode = 14;
-        break;
-      case 10:
-        nextScheduledMode = 15;
-        break;
-      case 12:
-        nextScheduledMode = 16;
-        break;
-      case 13:
-        nextScheduledMode = 18;
-        break;
-      case 14:
-        scheduleStrobo = 1;
-        break;
-      case 11:
-        nextScheduledModeDir = -1;
-        break;
-      case 15:
-        nextScheduledModeDir = 1;
-        break;
-      }
-    }
-    else if (evt.bit.EDGE == SEESAW_KEYPAD_EDGE_FALLING)
-    {
-      pad.pixels.setPixelColor(evt.bit.NUM, 0);
-    }
-  }
-  Serial.println("");
-  pad.pixels.show();
-  return 0;
-}
-
 void checkSerial()
 {
   if (Serial.available() > 0)
@@ -237,62 +122,6 @@ void checkSerial()
       Serial.print("POS:");
       Serial.println(globalP);
     }
-  }
-}
-
-static uint16_t potentiometer = 0;
-
-void checkPotentiometer()
-{
-  potentiometer = adc->analogRead(POTENTIOMETER_PIN, ADC_1);
-  // Serial.print("POT: ");
-  // Serial.println(potentiometer);
-  // Serial.println(potentiometer * 3.3 / adc->getMaxValue(ADC_1), 2);
-  // Serial.print("  ");
-  if (potentiometerControlsBrightness)
-  {
-    LEDS.setBrightness(map(potentiometer, 0, 65535, 0, 255));
-  }
-}
-
-void checkButtons()
-{
-  if (PAD_CONNECTED)
-    pad.read();
-}
-
-void readRemoteSwitch()
-{
-  if (remoteSwitch.available())
-  {
-
-    int value = remoteSwitch.getReceivedValue();
-    if (value != 0)
-    {
-      // nextMode(1);
-      Serial.print("Received ");
-      Serial.print(remoteSwitch.getReceivedValue());
-      Serial.print(" / delay ");
-      Serial.print(remoteSwitch.getReceivedDelay());
-
-      static int codes[4] = {REMOTE_BUTTON_A, REMOTE_BUTTON_B, REMOTE_BUTTON_C, REMOTE_BUTTON_D};
-      // for (int i = 0; i < 4; i++)
-      // {
-      //   if (codes[i] == value && PAD_CONNECTED)
-      //   {
-      //     pad.pixels.setPixelColor(12 + i, random8(), random8(), random8());
-      //     pad.pixels.show();
-      //   }
-      // }
-
-      // if (value == REMOTE_BUTTON_B)
-      //   globalP++;
-      if (value == REMOTE_BUTTON_A || value == REMOTE_BUTTON_B)
-        nextMode(1);
-      if (value == REMOTE_BUTTON_C || value == REMOTE_BUTTON_D)
-        scheduleStrobo = 2;
-    }
-    remoteSwitch.resetAvailable();
   }
 }
 
@@ -709,30 +538,14 @@ void setup()
 
   Serial.println("LED init");
 
-  // 7 no, 6 no, 5 no
-
   // 2,14,7,8,6, 20,21,5 (last three are unused now)
-  // 7,8,6, 5 (last three are unused now)
-  // no GRB, RBG, GBR,
-  FastLED.addLeds<APA102, 2, 14, BGR>(_leds, 128);       // go
-  FastLED.addLeds<APA102, 20, 14, BGR>(_leds, 128, 128); // go
+  // 5 = 26 due to pin changes
+  FastLED.addLeds<APA102, 2, 14, BGR>(_leds, 128);
+  FastLED.addLeds<APA102, 20, 14, BGR>(_leds, 128, 128);
   FastLED.addLeds<APA102, 21, 14, BGR>(_leds, 128 + 128, 127);
   FastLED.addLeds<APA102, 26, 14, BGR>(_leds, 128 + 128 + 127, 129);
 
-  //  FastLED.addLeds<APA102, 8, 14>(_leds, 128 + 128, 127);
-  //  FastLED.addLeds<APA102, 20, 14>(_leds, 128 + 128 + 127, 129);
-
-  // FastLED.addLeds<APA102, 5, 14>(_leds, 128 + 128, 127);
-
-  // FastLED.addLeds<APA102, 7, 8>(_leds, 128, 128);
-  // FastLED.addLeds<APA102, 6, 20>(_leds, 128 + 128, 127);
-  // FastLED.addLeds<APA102, 21, 5>(_leds, 128 + 128 + 127, 129);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 5000);
-  // FastLED.addLeds<APA102, 2, 6>(_leds, 128);
-  // FastLED.addLeds<APA102, 14, 6>(_leds, 128, 128);
-  // FastLED.addLeds<APA102, 7, 6>(_leds, 128 + 128, 127);
-  // FastLED.addLeds<APA102, 8, 6>(_leds, 128 + 128 + 127, 129);
-  // FastLED.setMaxPowerInVoltsAndMilliamps(5, 5000);
   FastLED.setBrightness(MAX_BRIGHTNESS);
 
   // init radio!
@@ -740,46 +553,8 @@ void setup()
   pinMode(REMOTE_RECEIVER_PIN, INPUT);
   remoteSwitch.enableReceive(REMOTE_RECEIVER_PIN);
 
-  if (PAD_CONNECTED)
-  {
-    Serial.println("pad init");
-    // init button pads and flash them once
-    if (!pad.begin())
-    {
-      Serial.println("pad init failed!");
-    }
-    else
-    {
-      for (uint16_t i = 0; i < pad.pixels.numPixels(); i++)
-      {
-
-        pad.activateKey(i, SEESAW_KEYPAD_EDGE_RISING);
-        pad.activateKey(i, SEESAW_KEYPAD_EDGE_FALLING);
-        pad.registerCallback(i, readButton);
-      }
-      for (uint16_t i = 0; i < pad.pixels.numPixels(); i++)
-      {
-        CRGB c = CHSV(i * 20, 240, 240);
-        pad.pixels.setPixelColor(i, c.r, c.g, c.b);
-        pad.pixels.show();
-        delay(25);
-      }
-      for (uint16_t i = 0; i < pad.pixels.numPixels(); i++)
-      {
-        pad.pixels.setPixelColor(i, 0x000000);
-        pad.pixels.show();
-        delay(25);
-      }
-    }
-  }
-  else
-  {
-    Serial.println("pad disabled!");
-  }
-
-  Serial.println("motion init");
-
   // Initialise the motion sensor
+  Serial.println("motion init");
   if (!bno.begin())
   {
     Serial.print("motion sensor error");
@@ -797,6 +572,7 @@ void setup()
     printBNOCalibrationStatus();
   }
 
+  // init audio
   AudioMemory(8);
 
   pinMode(TEENSY_LED, OUTPUT);
@@ -813,24 +589,11 @@ void setup()
   delay(10);
 
   // start with mode number 0
-  // modes[0][1]();
   effects[0]->setup();
 }
 
 void loop()
 {
-
-  // digitalWrite(2, HIGH);
-  // digitalWrite(26, HIGH); // was 5
-  // digitalWrite(6, HIGH);
-  // digitalWrite(7, HIGH);
-  // digitalWrite(8, HIGH);
-  // digitalWrite(14, HIGH);
-  // digitalWrite(20, HIGH);
-  // digitalWrite(21, HIGH);
-
-  // return;
-
   // EVERY_N_MILLIS(2000) { printBNOCalibrationStatus(); }
 
   runScheduluer();
@@ -847,13 +610,6 @@ void loop()
   }
 
   fps++;
-
-  // if (PAD_CONNECTED)
-  // {
-  //   EVERY_N_MILLISECONDS(100) { checkButtons(); }
-  // }
-  // EVERY_N_MILLISECONDS(250) { checkPotentiometer(); }
-  // EVERY_N_MILLISECONDS(50) { readRemoteSwitch(); }
 
   EVERY_N_MILLISECONDS(1000) { testled(); }
   EVERY_N_MILLISECONDS(100) { checkSerial(); }

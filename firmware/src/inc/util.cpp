@@ -24,7 +24,6 @@ void setMode(uint8_t mode)
     currentMode = effects.size() - 1;
   // setBrightness(MAX_BRIGHTNESS);
 
-  potentiometerControlsBrightness = 1;
   currentDelay = 0;
   shouldClear = 1;
   shouldShow = 1;
