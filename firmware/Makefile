@@ -170,6 +170,10 @@ clean:
 local: post_compile
 	./teensy_loader_cli --mcu=mk66fx1m0 -w -v main.hex
 
+go:
+	sleep 3 && $(abspath $(TOOLSPATH))/teensy-tools/1.59.0/teensy_reboot &	
+	./teensy_loader_cli --mcu=mk66fx1m0 -w -v main.hex	
+
 remote: post_compile
 	scp main.hex pi@raspberrypi.local:/home/pi/code.hex
 	ssh -t pi@raspberrypi.local "sleep 1 && python prog.py && sleep 1" &

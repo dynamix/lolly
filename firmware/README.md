@@ -30,16 +30,9 @@ Lick it! Get electroCUTEd!
 
 ## Setup
 
-### Add the Teensy to know Arduino boards 
-Add the following to your boards.txt (on OSX in /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/boards.txt)
+Adjust the Arduino path in the makefile
+`ARDUINOPATH = /Users/martin/Library/Arduino15/packages/teensy`
 
-```
-teensy36.build.fcpu=180000000
-teensy36.build.usbtype=USB_SERIAL
-teensy36.build.keylayout=US_ENGLISH
-teensy36.build.flags.optimize=-Os
-teensy36.build.flags.ldspecs=--specs=nano.specs
-```
 
 ### Needed libraries
 
@@ -79,4 +72,18 @@ TODO
 
 
 
-# List of modes we want to do
+# Ideas for effects
+
+* animation going for inside to the outside
+* circles from mid to edge rotating at different speeds with diff
+* spirals controllable with knobs and buttons
+* classic lolly spirals red and white with one arm or many
+* Bitmap/GIF rendering! For a smily or a heart
+* a pulsing heart
+* color sparkels
+* fire
+* plasma
+* bouncy balls
+* rains
+* audio wave form visualisation
+* little particles going in a direction that start with very white light and fade after

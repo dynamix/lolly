@@ -9,11 +9,10 @@
 #include <Adafruit_BNO055.h>
 #include <Adafruit_NeoTrellis.h>
 #include <Adafruit_NeoPixel.h>
+// #include <Adafruit_SH110X.h>
 #include <math.h>
 #include <RCSwitch.h>
 #include <vector>
-
-float FindE(int bands, int bins);
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
@@ -36,6 +35,13 @@ RCSwitch remoteSwitch = RCSwitch();
 // motion sensor
 Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x29, &Wire2);
 
+// Display
+#define SCREEN_I2C_ADDRESS 0x3C // I2C address of the Amazon OLED display, even though it says 0x78 on the back
+#define SCREEN_WIDTH 128        // OLED display width, in pixels
+#define SCREEN_HEIGHT 64        // OLED display height, in pixels
+#define OLED_RESET -1           //   QT-PY / XIAO
+// Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
+
 // button board
 Adafruit_NeoTrellis pad(NEO_TRELLIS_ADDR, &Wire1);
 #define PAD_CONNECTED false
@@ -45,13 +51,9 @@ uint8_t buttonState[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 uint8_t buttonStateful[16] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0};
 uint32_t buttonDebounce[16] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0};
 
-// 3W pixels
-// SoftwareSerial pixieSerial(-1, 26);
-// Adafruit_Pixie pixie = Adafruit_Pixie(1, &Serial1);
-
 #define NUM_LEDS 512
-
-#define MAX_BRIGHTNESS 150
+#define MAX_BRIGHTNESS 25
+// #define MAX_BRIGHTNESS 150
 #define TEENSY_LED 13
 
 // 2,14,7,8  ,6,20,21,5
@@ -72,14 +74,14 @@ int8_t currentMode = 0;
 int8_t previousMode = 0;
 int8_t nextScheduledMode = -1;
 int8_t nextScheduledModeDir = 0;
-uint8_t currentBrightness = MAX_BRIGHTNESS;
+// uint8_t currentBrightness = MAX_BRIGHTNESS;
+uint8_t currentBrightness = 25;
 uint16_t currentDelay = 0; // delay between frames
 uint8_t shouldClear = 1;   // clear all leds between frames
 uint8_t shouldShow = 1;
-uint8_t usePixies = 0;                       // pixies on
 uint8_t potentiometerControlsBrightness = 1; // use potentiometer to get brightness value for next frame
-uint8_t useFibers = 1;
 uint8_t scheduleStrobo = 0;
+
 // Debug stuff to count LEDS properly
 static int globalP = 0;
 
@@ -87,6 +89,7 @@ int accelTestMV = 0;
 
 elapsedMillis fps0;
 
+// base class to create some effects
 class Effect
 {
 public:
@@ -98,11 +101,14 @@ std::vector<Effect *> effects;
 
 #include "inc/util.cpp"
 
+// map from linear leds to the actual physical led order
+// _leds is the array that fastled uses for physical signals
 void remap()
 {
+  // return;
   for (int i = 0; i < NUM_LEDS; i++)
   {
-    _leds[i] = leds[ledsOnPCBMap[i]];
+    _leds[ledsOnPCBMap[i]] = leds[i];
   }
 }
 
@@ -346,6 +352,68 @@ public:
   virtual CRGB render(int idx, float r, float deg) { return CRGB::Black; }
 };
 
+uint16_t BNO055_SAMPLERATE_DELAY_MS = 10;
+// velocity = accel*dt (dt in seconds)
+// position = 0.5*accel*dt^2
+double ACCEL_VEL_TRANSITION = (double)(BNO055_SAMPLERATE_DELAY_MS) / 1000.0;
+double ACCEL_POS_TRANSITION = 0.5 * ACCEL_VEL_TRANSITION * ACCEL_VEL_TRANSITION;
+double DEG_2_RAD = 0.01745329251; // trig functions require radians, BNO055 outputs degrees
+
+// trait to add accelerometer data to an effect
+class AccelTrait
+{
+private:
+  elapsedMillis t;
+
+public:
+  double xPos = 0;
+  double yPos = 0;
+  double headingVel = 0;
+  sensors_event_t orientationData, linearAccelData, accelData;
+
+  void updateSenorData()
+  {
+    // - VECTOR_ACCELEROMETER - m/s^2
+    // - VECTOR_MAGNETOMETER  - uT
+    // - VECTOR_GYROSCOPE     - rad/s
+    // - VECTOR_EULER         - degrees
+    // - VECTOR_LINEARACCEL   - m/s^2
+    // - VECTOR_GRAVITY       - m/s^2
+    if (this->t < BNO055_SAMPLERATE_DELAY_MS)
+      return;
+    this->t = 0;
+
+    bno.getEvent(&this->orientationData, Adafruit_BNO055::VECTOR_EULER);
+    //  bno.getEvent(&angVelData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+    bno.getEvent(&this->linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+    bno.getEvent(&this->accelData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
+
+    this->xPos = this->xPos + ACCEL_POS_TRANSITION * this->linearAccelData.acceleration.x;
+    this->yPos = this->yPos + ACCEL_POS_TRANSITION * this->linearAccelData.acceleration.y;
+
+    // velocity of sensor in the direction it's facing
+    this->headingVel = ACCEL_VEL_TRANSITION * this->linearAccelData.acceleration.x / cos(DEG_2_RAD * this->orientationData.orientation.x);
+  }
+};
+
+void printBNOCalibrationStatus()
+{
+  uint8_t sensorStatus[4] = {0, 0, 0, 0};
+  bno.getCalibration(&sensorStatus[0], &sensorStatus[1], &sensorStatus[2], &sensorStatus[3]);
+  if (!sensorStatus[0])
+  {
+    Serial.print("SYSTEM CALIBRATION NOT READY");
+  }
+  Serial.print("Sys:");
+  Serial.print(sensorStatus[0]);
+  Serial.print(" G:");
+  Serial.print(sensorStatus[1]);
+  Serial.print(" A:");
+  Serial.print(sensorStatus[2]);
+  Serial.print(" M:");
+  Serial.println(sensorStatus[3]);
+}
+
 class PolarTest : public EffectPolar
 {
   float r = 0;
@@ -405,8 +473,26 @@ class PolarDemo : public Effect
   {
     uint16_t a = millis() / 7;
     static int n = 0;
-    // EVERY_N_MILLIS(259) { n++; n = n%POLAR_COLS;}
 
+    for (int j = 0; j < POLAR_ROWS; j++)
+    {
+      for (int i = 0; i < POLAR_COLS; i++)
+      {
+        uint16_t idx = polarMap[POLAR_COLS * j + i];
+        if (idx == 1000)
+          continue;
+        leds[idx].setHue(i * 54 + (a >> 2) + (sin8(j * 16 + a)) >> 1);
+      }
+    }
+  }
+};
+
+class PolarCaleidoscope : public Effect
+{
+  void draw(void) override
+  {
+    uint16_t a = millis() / 7;
+    static int n = 0;
     for (int j = 0; j < POLAR_ROWS; j++)
     {
       for (int i = 0; i < POLAR_COLS; i++)
@@ -415,39 +501,42 @@ class PolarDemo : public Effect
 
         if (idx == 1000)
           continue;
-        leds[idx].setHue(i * 54 + (a >> 2) + (sin8(j * 16 + a)) >> 1);
+
+        byte r = (sin8(i * 16 + a) + cos8(j * 16 + a / 2)) / 2;
+        byte g = sin8(j * 16 + a / 2 + sin8(leds[idx].r + a) / 16);
+        byte b = cos8(i * 16 + j * 16 - a / 2 + leds[idx].g);
+
+        leds[idx].setRGB(r, g, b);
+      }
+    }
+  }
+};
+
+class PolarFireFly : public Effect
+{
+  void draw(void) override
+  {
+    uint16_t a = millis() / 3;
+    static int n = 0;
+    // EVERY_N_MILLIS(259) { n++; n = n%POLAR_COLS;}
+
+    for (int j = 0; j < POLAR_ROWS; j++)
+    {
+      for (int i = 0; i < POLAR_COLS; i++)
+      {
+        uint16_t idx = polarMap[POLAR_COLS * j + i];
+
+        int jj = POLAR_ROWS - j;
+
+        if (idx == 1000)
+          continue;
+        leds[idx] = HeatColor(qsub8(inoise8(i * 60 + a, jj * 5 + a, a / 3), abs8(jj - (POLAR_ROWS - 1)) * 255 / (POLAR_ROWS + 2)));
 
         // leds[idx] = CHSV(i*4,200,200);
       }
     }
   }
 };
-
-// class Kaleidoscope : public Effect
-// {
-//   elapsedMillis t;
-//   void draw(void) override
-//   {
-
-//     uint16_t a = t / 8;
-
-//     for (int j = 0; j < NUM_ROWS_CILINDR; j++)
-//     {
-//       for (int i = 0; i < NUM_COLS_CILINDR; i++)
-//       {
-//         uint16_t index = XY_CILINDR(i, j);
-//         if (index == lastSafeIndex)
-//           continue;
-
-//         byte valueR = (sin8(i * 16 + a) + cos8(j * 16 + a / 2)) / 2;
-//         byte valueG = sin8(j * 16 + a / 2 + sin8(leds[index].r + a) / 16);
-//         byte valueB = cos8(i * 16 + j * 16 - a / 2 + leds[index].g);
-
-//         leds[index].setRGB(valueR, valueG, valueB);
-//       }
-//     }
-//   }
-
 class FTest : public Effect
 {
 public:
@@ -455,7 +544,24 @@ public:
   {
     static uint8_t x = 0;
     x++;
-    fill_rainbow(leds, NUM_LEDS, x, 1);
+    // fill_rainbow(leds, NUM_LEDS, x, 1);
+    fill_solid(_leds, 128, CRGB::Green);
+    fill_solid(&_leds[128], 128, CRGB::Red);
+    fill_solid(&_leds[128 + 128], 127, CRGB::Blue);
+    fill_solid(&_leds[128 + 128 + 127], 129, CRGB::Yellow);
+  }
+};
+class MapTest : public Effect
+{
+public:
+  void draw()
+  {
+    static uint16_t x = 0;
+
+    leds[x] = CRGB::Red;
+    x++;
+    x = x % NUM_LEDS;
+    delay(500);
   }
 };
 
@@ -490,13 +596,108 @@ public:
   }
 };
 
+class AccelTest : public Effect, public AccelTrait
+{
+public:
+  void setup()
+  {
+    shouldClear = false;
+  }
+
+  void draw()
+  {
+    // fadeToBlackBy(leds, NUM_LEDS, 13);
+    this->updateSenorData();
+    EVERY_N_MILLISECONDS(250)
+    {
+      Serial.print("Heading: ");
+      Serial.println(this->orientationData.orientation.x);
+      // Serial.print("Position: ");
+      // Serial.print(xPos);
+      // Serial.print(" , ");
+      // Serial.println(yPos);
+      // Serial.print("Speed: ");
+      // Serial.println(headingVel);
+      Serial.print("linearAccel");
+      Serial.print(" x:");
+      Serial.print(this->linearAccelData.acceleration.x);
+      Serial.print(" y:");
+      Serial.print(this->linearAccelData.acceleration.y);
+      Serial.print(" z:");
+      Serial.println(this->linearAccelData.acceleration.z);
+      // Serial.println("accel");
+      // this->printEvent(&accelData);
+      // Serial.println("-------");
+    }
+  }
+};
+
+class AudioTest : public Effect
+{
+
+  elapsedMillis fps;
+  void draw() override
+  {
+    if (this->fps > 24)
+    {
+      if (peak1.available())
+      {
+        this->fps = 0;
+        int monoPeak = peak1.read() * 30.0;
+        Serial.print("|");
+        for (int cnt = 0; cnt < monoPeak; cnt++)
+        {
+          Serial.print(">");
+        }
+        Serial.println();
+      }
+    }
+  }
+};
+// class GifTest : public Effect
+// {
+//   void draw(void) override
+//   {
+
+//     CRGB *pal = (CRGB *)status->palette;
+//     uint8_t *pixels = status->hsd.buffers + HEATSHRINK_STATIC_INPUT_BUFFER_SIZE;
+//     // plot each sprite pixel modulo the size of the matrix, i.e. wrap the image
+//     for (int i = 0; i < PLANAR_COLS; i++)
+//     {
+//       for (int j = 0; j < PLANAR_ROWS; j++)
+//       {
+//         int idx = planarMap[i * PLANAR_COLS + j];
+//         if (idx == 1000)
+//           continue;
+
+//         uint8_t palette_index = *pixels++;
+//         if (palette_index > 0 && cfg.effect != 1)
+//         {
+//           // non-0 palette entry;  copy the palette entry to the LED
+//           leds[idx] = pal[palette_index];
+//         }
+//         else
+//         {
+//           // palette entry 0 is the mask;  fade this LED to the mask colour (black usually)
+//           fadeTowardColour(leds[idx], pal[palette_index], fade_speed);
+//         }
+//       }
+//     }
+//   }
+// };
+
 // the setup routine runs once when you press reset:
 void setup()
 {
-
   // add all effects
   effects = {
+      new PolarFireFly(),
+      new MapTest(),
+      new PolarTest(),
       new FTest(),
+      new PolarDemo(),
+      new AudioTest(),
+      new AccelTest(),
       new ColorWheelWithSparkels(),
   };
 
@@ -506,25 +707,36 @@ void setup()
 
   Serial.println("boot lolly");
 
-  // init 3w leds serial connection
-  // Serial.println("3W LED init");
-  // Serial1.setTX(26);
-  // Serial1.begin(115200);
-  // FastLED.addLeds<PIXIE, 26>(powerLeds, 2);
+  Serial.println("LED init");
 
-  Serial.println("LED12345 init");
+  // 7 no, 6 no, 5 no
 
   // 2,14,7,8,6, 20,21,5 (last three are unused now)
-  // FastLED.addLeds<APA102>(leds, 1);
-  FastLED.addLeds<APA102, 2, 6>(_leds, 128);
-  FastLED.addLeds<APA102, 14, 6>(_leds, 128, 128);
-  FastLED.addLeds<APA102, 7, 6>(_leds, 128 + 128, 127);
-  FastLED.addLeds<APA102, 8, 6>(_leds, 128 + 128 + 127, 129);
+  // 7,8,6, 5 (last three are unused now)
+  // no GRB, RBG, GBR,
+  FastLED.addLeds<APA102, 2, 14, BGR>(_leds, 128);       // go
+  FastLED.addLeds<APA102, 20, 14, BGR>(_leds, 128, 128); // go
+  FastLED.addLeds<APA102, 21, 14, BGR>(_leds, 128 + 128, 127);
+  FastLED.addLeds<APA102, 26, 14, BGR>(_leds, 128 + 128 + 127, 129);
+
+  //  FastLED.addLeds<APA102, 8, 14>(_leds, 128 + 128, 127);
+  //  FastLED.addLeds<APA102, 20, 14>(_leds, 128 + 128 + 127, 129);
+
+  // FastLED.addLeds<APA102, 5, 14>(_leds, 128 + 128, 127);
+
+  // FastLED.addLeds<APA102, 7, 8>(_leds, 128, 128);
+  // FastLED.addLeds<APA102, 6, 20>(_leds, 128 + 128, 127);
+  // FastLED.addLeds<APA102, 21, 5>(_leds, 128 + 128 + 127, 129);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 5000);
+  // FastLED.addLeds<APA102, 2, 6>(_leds, 128);
+  // FastLED.addLeds<APA102, 14, 6>(_leds, 128, 128);
+  // FastLED.addLeds<APA102, 7, 6>(_leds, 128 + 128, 127);
+  // FastLED.addLeds<APA102, 8, 6>(_leds, 128 + 128 + 127, 129);
+  // FastLED.setMaxPowerInVoltsAndMilliamps(5, 5000);
   FastLED.setBrightness(MAX_BRIGHTNESS);
 
-  Serial.println("Radio init");
   // init radio!
+  Serial.println("Radio init");
   pinMode(REMOTE_RECEIVER_PIN, INPUT);
   remoteSwitch.enableReceive(REMOTE_RECEIVER_PIN);
 
@@ -581,6 +793,8 @@ void setup()
     Serial.print(temp);
     Serial.println(" C");
     bno.setExtCrystalUse(true);
+
+    printBNOCalibrationStatus();
   }
 
   AudioMemory(8);
@@ -605,6 +819,20 @@ void setup()
 
 void loop()
 {
+
+  // digitalWrite(2, HIGH);
+  // digitalWrite(26, HIGH); // was 5
+  // digitalWrite(6, HIGH);
+  // digitalWrite(7, HIGH);
+  // digitalWrite(8, HIGH);
+  // digitalWrite(14, HIGH);
+  // digitalWrite(20, HIGH);
+  // digitalWrite(21, HIGH);
+
+  // return;
+
+  // EVERY_N_MILLIS(2000) { printBNOCalibrationStatus(); }
+
   runScheduluer();
 
   if (shouldClear)
