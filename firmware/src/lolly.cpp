@@ -9,6 +9,7 @@
 #include <Adafruit_BNO055.h>
 #include <Adafruit_NeoTrellis.h>
 #include <Adafruit_NeoPixel.h>
+#include <Wire.h>
 // #include <Adafruit_SH110X.h>
 #include <math.h>
 #include <RCSwitch.h>
@@ -19,6 +20,8 @@
 #define POTENTIOMETER_PIN A17
 #define MIC_PIN A2
 #define REMOTE_RECEIVER_PIN 24
+
+#define INPUT_CONTROLLER_I2C_ADDRESS 0x42
 
 // analog - digital
 ADC *adc = new ADC();
@@ -125,6 +128,58 @@ void checkSerial()
   }
 }
 
+
+void readFromInputController()
+{
+  Wire1.requestFrom(INPUT_CONTROLLER_I2C_ADDRESS, 6);
+  Serial.print("read from input controller: read");
+
+  int i = 0;
+  int buttonState = 0;
+  int leftEncoder = 0;
+  int rightEncoder = 0;
+  while (Wire1.available())
+  { // slave may send less than requested
+
+    char b = Wire1.read();
+
+    switch (i)
+    {
+    case 0:
+      buttonState = b;
+      break;
+    case 1:
+      buttonState |= b << 8;
+      break;
+    case 2:
+      leftEncoder = b;
+      break;
+    case 3:
+      leftEncoder |= b << 8;
+      break;
+    case 4:
+      rightEncoder = b;
+      break;
+    case 5:
+      rightEncoder |= b << 8;
+      break;
+    }
+
+    i++;
+    if (i == 6)
+    {
+      break;
+    }
+  }
+  Serial.print(i);
+  Serial.print(" bytes. buttons: ");
+  Serial.print(buttonState, BIN);
+  Serial.print(" left: ");
+  Serial.print(leftEncoder);
+  Serial.print(" right: ");
+  Serial.println(rightEncoder);
+}
+
 void runScheduluer()
 {
   if (nextScheduledMode != -1)
@@ -143,6 +198,7 @@ uint16_t fps = 0;
 
 void showFps()
 {
+  Serial.print("FPS: ");
   Serial.println(fps);
   fps = 0;
 }
@@ -533,6 +589,7 @@ void setup()
   while (!Serial && (millis() <= 2000))
     ; // Wait for Serial interface
   Serial.begin(115200);
+  Wire1.begin(); // join I2C bus as master
 
   Serial.println("boot lolly");
 
@@ -589,12 +646,14 @@ void setup()
   delay(10);
 
   // start with mode number 0
-  effects[0]->setup();
+  effects[currentMode]->setup();
 }
 
 void loop()
 {
   // EVERY_N_MILLIS(2000) { printBNOCalibrationStatus(); }
+
+  EVERY_N_MILLISECONDS(1000) { readFromInputController(); }
 
   runScheduluer();
 
