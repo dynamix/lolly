@@ -24,15 +24,20 @@ Lick it! Get electroCUTEd!
 - [Arduino 2.3.2](https://www.arduino.cc/en/Main/Software?)
 - `brew install arduino-cli` might be enough
 - [latest Teensyduino](https://www.pjrc.com/teensy/td_download.html)
+  - add this to "Additional board manager URLs" in Arduino settings:
+  - `https://www.pjrc.com/teensy/package_teensy_index.json`
 - a Teensy 3.6
 - a RaspperyPi Zero W (for over the air updates)
 
 
 ## Setup
 
-Adjust the Arduino path in the makefile
-`ARDUINOPATH = /Users/martin/Library/Arduino15/packages/teensy`
-
+Get the `teensy_loader_cli` available in the repo `firmware` directory:
+```bash
+cd firmware
+brew install teensy_loader_cli
+ln -s $(which teensy_loader_cli) ./teensy_loader_cli 
+```
 
 ### Needed libraries
 
