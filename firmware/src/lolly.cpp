@@ -65,6 +65,7 @@ AudioConnection patchCord1(adc1, peak1);
 
 #include "segment.h"
 #include "maps.h"
+#include "palette.h"
 
 // global state
 int8_t currentMode = 0;
@@ -157,7 +158,7 @@ public:
     this->beforeRender();
     for (int i = 0; i < NUM_LEDS; i++)
     {
-      leds[i] = this->render(i, ledsXYMap[i][0], ledsXYMap[i][0]);
+      leds[i] = this->render(i, ledsXYMap[i][0], ledsXYMap[i][1]);
     }
   };
   virtual void beforeRender(void) {};
@@ -347,8 +348,6 @@ class PolarFireFly : public Effect
   {
     uint16_t a = millis() / 3;
     static int n = 0;
-    // EVERY_N_MILLIS(259) { n++; n = n%POLAR_COLS;}
-
     for (int j = 0; j < POLAR_ROWS; j++)
     {
       for (int i = 0; i < POLAR_COLS; i++)
@@ -360,8 +359,6 @@ class PolarFireFly : public Effect
         if (idx == 1000)
           continue;
         leds[idx] = HeatColor(qsub8(inoise8(i * 60 + a, jj * 5 + a, a / 3), abs8(jj - (POLAR_ROWS - 1)) * 255 / (POLAR_ROWS + 2)));
-
-        // leds[idx] = CHSV(i*4,200,200);
       }
     }
   }
@@ -515,6 +512,84 @@ class AudioTest : public Effect
 //   }
 // };
 
+DEFINE_GRADIENT_PALETTE(bla){
+    0, 194, 1, 1,
+    94, 1, 29, 18,
+    132, 57, 131, 28,
+    255, 113, 1, 1};
+
+class Tunnel : public Effect
+{
+  void setup() override
+  {
+    shouldClear = true;
+  }
+  void draw(void) override
+  {
+    int t = millis() >> 3;
+    currentPalette = bla;
+    for (int i = 0; i < PLANAR_COLS; i++)
+    {
+      for (int j = 0; j < PLANAR_ROWS; j++)
+      {
+        int idx = planarMap[i * PLANAR_COLS + j];
+        if (idx == 1000)
+          continue;
+
+        uint16_t colorIdx = sqrt16((i -= sin8(i + t / 3) >> 4) * i + (j -= cos8(j + t >> 1) >> 4) * j) * 24 - t * 2;
+        CRGB newcolor = ColorFromPalette(currentPalette, colorIdx, 255);
+        leds[idx] = newcolor;
+        // nblend(leds[idx], newcolor, 32);
+      }
+    }
+  }
+};
+
+// void Flower() {
+//   uint16_t  a = millis()/8;
+
+//   for (int j = 0; j < NUM_ROWS_CILINDR; j++) {
+//     for (int i = 0; i < NUM_COLS_CILINDR; i++) {
+//       uint16_t index = XY_CILINDR(i,j);
+//       if (index==lastSafeIndex) continue;
+//       CRGB newcolor = ColorFromPalette( gCurrentPalette, (j*255/(NUM_ROWS_CILINDR-1)+sin8((i*8+a))+sin8(i*30-a)+a)/2, 255);
+//       nblend (leds[index], newcolor, 16);
+//     }
+//   }
+// }
+
+// void DiagonalPattern() {
+//  uint16_t ms = millis()/8;
+//  int index=0;
+
+//   for (byte j = 0; j < NUM_ROWS_PLANAR; j++) {
+//     for (byte i = 0; i < NUM_COLS_PLANAR; i++) {
+//       int ledsindex = XY_fibon_PLANAR(i,j);
+//       if (ledsindex==lastSafeIndex) continue;
+//       leds[ledsindex].setHue((i<<3)+(j<<3)+ms);
+//     }
+//   }
+// }
+
+class Diagonal : public EffectPolar
+{
+
+  virtual CRGB render(int idx, float x, float y)
+  {
+    return CHSV(x * 100 + y * 100 + millis() / 8, 200, 200);
+  }
+};
+
+// RGBTunnel
+//     Flower
+//         colorwaves
+//             DiagonalPattern
+//                 Spiral2
+//                     RGB_Caleidoscope2
+//                         RGB_Caleidoscope1
+//                             Swirl
+//                                 RGB_hiphotic
+
 // the setup routine runs once when you press reset:
 void setup()
 {
@@ -590,6 +665,9 @@ void setup()
 
   // start with mode number 0
   effects[0]->setup();
+
+  // set a global pallette
+  currentPalette = gradientPalettes[1];
 }
 
 void loop()
