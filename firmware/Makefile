@@ -5,7 +5,7 @@ TEENSY = 36
 TEENSY_CORE_SPEED = 180000000
 CPUARCH = cortex-m4
 
-ARDUINOPATH = /Users/martin/Library/Arduino15/packages/teensy
+ARDUINOPATH = $(HOME)/Library/Arduino15/packages/teensy
 
 # LIBRARYPATH = $(abspath $(ARDUINOPATH)/libraries)
 LIBRARYPATH = $(abspath libraries)
