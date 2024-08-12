@@ -49,12 +49,12 @@ Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x29, &Wire2);
 // for SCA/SCl might have to use &Wire1
 
 // active or not active for the pad buttons
-uint8_t buttonState[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-uint8_t buttonStateful[16] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0};
-uint32_t buttonDebounce[16] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0};
+// uint8_t buttonState[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+// uint8_t buttonStateful[16] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0};
+// uint32_t buttonDebounce[16] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0};
 
 #define NUM_LEDS 512
-#define MAX_BRIGHTNESS 25
+#define MAX_BRIGHTNESS 100
 // #define MAX_BRIGHTNESS 150
 #define TEENSY_LED 13
 
@@ -87,6 +87,11 @@ static int globalP = 0;
 int accelTestMV = 0;
 
 elapsedMillis fps0;
+
+byte buttonState = 0;
+byte buttonDebounce = 0;
+byte leftEncoder = 0;
+byte rightEncoder = 0;
 
 // base class to create some effects
 class Effect
@@ -132,52 +137,71 @@ void checkSerial()
 void readFromInputController()
 {
   Wire1.requestFrom(INPUT_CONTROLLER_I2C_ADDRESS, 6);
-  Serial.print("read from input controller: read");
+  // Serial.print("read from input controller: read");
 
   int i = 0;
-  int buttonState = 0;
-  int leftEncoder = 0;
-  int rightEncoder = 0;
+  // byte buttonState = 0;
+  // int leftEncoder = 0;
+  // int rightEncoder = 0;
   while (Wire1.available())
   { // slave may send less than requested
 
     char b = Wire1.read();
+
+    int a4 = 0;
+    int a5 = 0;
+    int a6 = 0;
 
     switch (i)
     {
     case 0:
       buttonState = b;
       break;
-    case 1:
-      buttonState |= b << 8;
-      break;
+    // case 1:
+    //   // buttonState |= b << 8;
+    //   break;
     case 2:
       leftEncoder = b;
       break;
+    // case 2:
+    //   leftEncoder |= b << 8;
+    //   break;
     case 3:
-      leftEncoder |= b << 8;
-      break;
-    case 4:
       rightEncoder = b;
       break;
-    case 5:
-      rightEncoder |= b << 8;
+    case 4:
+      a4 = b;
       break;
+    case 5:
+      a5 = b;
+      break;
+    case 6:
+      a6 = b;
+      break;
+      //   rightEncoder |= b << 8;
+      //   break;
     }
 
     i++;
     if (i == 6)
     {
+      // Serial.print(i);
+      // Serial.print(" bytes. buttons: ");
+      // Serial.print(buttonState, BIN);
+      // Serial.print(" left: ");
+      // Serial.print(leftEncoder);
+      // Serial.print(" right: ");
+      // Serial.print(rightEncoder);
+      // Serial.print(" a4: ");
+      // Serial.print(a4);
+      // Serial.print(" a5: ");
+      // Serial.print(a5);
+      // Serial.print(" a6: ");
+      // Serial.println(a6);
+
       break;
     }
   }
-  Serial.print(i);
-  Serial.print(" bytes. buttons: ");
-  Serial.print(buttonState, BIN);
-  Serial.print(" left: ");
-  Serial.print(leftEncoder);
-  Serial.print(" right: ");
-  Serial.println(rightEncoder);
 }
 
 void runScheduluer()
@@ -230,7 +254,7 @@ public:
     this->beforeRender();
     for (int i = 0; i < NUM_LEDS; i++)
     {
-      leds[i] = this->render(i, ledsPolarMap[i][0], ledsPolarMap[i][0]);
+      leds[i] = this->render(i, ledsPolarMap[i][0], ledsPolarMap[i][1]);
     }
   };
   virtual void beforeRender(void) {};
@@ -305,7 +329,7 @@ class PolarTest : public EffectPolar
   uint8_t hue = 0;
   void beforeRender() override
   {
-    this->r = beatsin8(20, 0, 255) / 255.0;
+    this->r = beatsin8(140, 0, 255) / 255.0;
     this->hue++;
   }
   CRGB render(int idx, float r, float deg) override
@@ -323,7 +347,9 @@ class VariableArmsDemo : public Effect
   {
     static uint8_t hueOffset = 0;
     static uint8_t numArms = 1;
-    EVERY_N_SECONDS(1) { numArms++; }
+    // EVERY_N_SECONDS(1) { numArms++; }
+    EVERY_N_MILLIS(2) { hueOffset++; }
+    EVERY_N_MILLIS(5000) { numArms++; }
     for (int i = 0; i < NUM_LEDS; i++)
     {
       uint16_t armIndex = i % numArms;
@@ -356,7 +382,7 @@ class PolarDemo : public Effect
 {
   void draw(void) override
   {
-    uint16_t a = millis() / 7;
+    uint16_t a = millis() / 4;
     static int n = 0;
 
     for (int j = 0; j < POLAR_ROWS; j++)
@@ -376,7 +402,7 @@ class PolarCaleidoscope : public Effect
 {
   void draw(void) override
   {
-    uint16_t a = millis() / 7;
+    uint16_t a = millis() / 4;
     static int n = 0;
     for (int j = 0; j < POLAR_ROWS; j++)
     {
@@ -396,12 +422,36 @@ class PolarCaleidoscope : public Effect
     }
   }
 };
+class PolarCaleidoscope2 : public Effect
+{
+  void draw(void) override
+  {
+    uint16_t a = millis() / 3;
+    static int n = 0;
+    for (int j = 0; j < POLAR_ROWS; j++)
+    {
+      for (int i = 0; i < POLAR_COLS; i++)
+      {
+        uint16_t idx = polarMap[POLAR_COLS * j + i];
+
+        if (idx == 1000)
+          continue;
+
+        byte r = (sin8(i * 28 + a) + cos8(j * 28 + a)) >> 1;
+        byte g = (sin8(i * 28 - a) + cos8(j * 28 + a >> 1)) >> 1;
+        byte b = sin8(j * 26 + a);
+
+        leds[idx].setRGB(r, g, b);
+      }
+    }
+  }
+};
 
 class PolarFireFly : public Effect
 {
   void draw(void) override
   {
-    uint16_t a = millis() / 3;
+    uint16_t a = millis() / 2;
     static int n = 0;
     for (int j = 0; j < POLAR_ROWS; j++)
     {
@@ -418,6 +468,35 @@ class PolarFireFly : public Effect
     }
   }
 };
+
+class DiagonalSin : public Effect2D
+{
+
+  virtual CRGB render(int idx, float x, float y)
+  {
+    return CHSV(x * 100 + (sin8(y * PI * 2 * 255) / 255.0) * y * 100 + millis() / 8, 200, 200);
+  }
+};
+
+class SinelonEffect : public Effect
+{
+public:
+  void setup()
+  {
+    shouldClear = false;
+  }
+
+  void draw()
+  {
+    static uint8_t gHue = 0;
+    fadeToBlackBy(leds, NUM_LEDS, 20);
+
+    int pos = beatsin16(map(80, 0, 255, 2, 60), 0, NUM_LEDS);
+    leds[pos] += CHSV(gHue, 255, 192);
+    EVERY_N_MILLISECONDS(3) { gHue++; }
+  }
+};
+
 class FTest : public Effect
 {
 public:
@@ -635,6 +714,49 @@ class Diagonal : public EffectPolar
   }
 };
 
+class Blabla : public EffectPolar
+{
+  uint8_t hue = 0;
+  void beforeRender() override
+  {
+    this->hue++;
+  }
+  CRGB render(int idx, float r, float deg) override
+  {
+    if (r < 0.1)
+      return CHSV(this->hue, 200, 200);
+    return CRGB::Black;
+  }
+};
+
+class Swirl : public Effect
+{
+
+  void setup() override
+  {
+    shouldClear = false;
+  }
+
+  void draw(void) override
+  {
+    uint16_t a = millis() / 7;
+    static int n = 0;
+
+    for (int j = 0; j < POLAR_ROWS; j++)
+    {
+      for (int i = 0; i < POLAR_COLS; i++)
+      {
+        uint16_t idx = polarMap[POLAR_COLS * j + i];
+        if (idx == 1000)
+          continue;
+
+        byte hue = i * 56 + (a >> 2) + (sin8(j * 16 + a)) >> 1;
+        nblend(leds[idx], ColorFromPalette(currentPalette, hue, 255), 16);
+      }
+    }
+  }
+};
+
 // RGBTunnel
 //     Flower
 //         colorwaves
@@ -642,7 +764,7 @@ class Diagonal : public EffectPolar
 //                 Spiral2
 //                     RGB_Caleidoscope2
 //                         RGB_Caleidoscope1
-//                             Swirl
+
 //                                 RGB_hiphotic
 
 // the setup routine runs once when you press reset:
@@ -650,13 +772,21 @@ void setup()
 {
   // add all effects
   effects = {
+      // new FirstEffect(),
       new PolarFireFly(),
-      new MapTest(),
+      new SinelonEffect(),
+      // new Blabla(),
+      new VariableArmsDemo(),
+      new PolarCaleidoscope(),
+      new PolarCaleidoscope2(),
+      // new MapTest(),
       new PolarTest(),
-      new FTest(),
+      // new FTest(),
       new PolarDemo(),
-      new AudioTest(),
-      new AccelTest(),
+      new Diagonal(),
+      new DiagonalSin(),
+      // new AudioTest(),
+      // new AccelTest(),
       new ColorWheelWithSparkels(),
   };
 
@@ -726,11 +856,40 @@ void setup()
   currentPalette = gradientPalettes[1];
 }
 
+bool button1 = false;
+
+void checkButtons()
+{
+  button1 = false;
+
+  if (buttonState & 1 == 1)
+  {
+    buttonDebounce = 1;
+  }
+  if (((buttonState & 1) == 0) && ((buttonDebounce & 1) == 1))
+  {
+    Serial.println("deounce");
+    button1 = true;
+    buttonDebounce &= 0xb11111110;
+  }
+
+  if (button1)
+    nextMode(1);
+
+  currentBrightness = leftEncoder % MAX_BRIGHTNESS;
+  if (currentBrightness < 5)
+    currentBrightness = 5;
+}
+
 void loop()
 {
   // EVERY_N_MILLIS(2000) { printBNOCalibrationStatus(); }
 
-  EVERY_N_MILLISECONDS(1000) { readFromInputController(); }
+  EVERY_N_MILLISECONDS(50)
+  {
+    readFromInputController();
+    checkButtons();
+  }
 
   runScheduluer();
 
@@ -741,6 +900,7 @@ void loop()
 
   if (shouldShow)
   {
+    FastLED.setBrightness(currentBrightness);
     remap();
     FastLED.show();
   }
