@@ -116,4 +116,6 @@ pcb/q4-backups/q4-2024-07-05_174344.zip
 pcb/q4-backups/q4-2024-07-09_143206.zip
 q4-backups/q4-2024-07-16_204838.zip
 pcb/core/*.lck
-pcb/core/core-backups
+pcb/core/core-backups/**
+pcb/core/*.gbr
+pcb/core/*.drl
